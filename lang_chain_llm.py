@@ -10,6 +10,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 # -----------------------------
@@ -50,39 +52,38 @@ class LLaMa(LLM):
 
 
 # ---------------------------------
-# 3) Build retriever (FAISS + HF)
+# 3) Build retriever from PDF
 # ---------------------------------
-# Example documents (replace or expand for your domain)
-documents = [
-    {"content": "What is your return policy? We accept returns within 30 days if items are unused and in original packaging."},
-    {"content": "How long does shipping take? Standard shipping takes 3-5 business days; express options are available at checkout."},
-    {"content": "Do you offer refunds for damaged items? No, please contact support with photos within 7 days for a replacement or refund."},
-    {"content": "Can I change my order after placing it? Orders can be updated within 24 hours before they ship."},
-    {"content": "What payment methods do you accept? We accept major credit cards, PayPal, and local e-wallets."},
-]
+# Load the PDF
+loader = PyPDFLoader("HOADON_655233460.pdf")
+documents = loader.load()
 
-texts = [doc["content"] for doc in documents]
+# Split the document into chunks
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+texts = text_splitter.split_documents(documents)
+
 
 # HuggingFace sentence-transformers embeddings; good default for quick RAG demos
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 # Build FAISS index and get a retriever
-retriever = FAISS.from_texts(texts, embeddings).as_retriever(k=5)
+retriever = FAISS.from_documents(texts, embeddings).as_retriever(k=5)
 
 
 # ----------------------------
 # 4) Prompt template for the LLM
 # ----------------------------
-faq_template = """
-You are a chat agent for my E-Commerce Company. As a chat agent, it is your duty to help the human with their inquiry and make them a happy customer.
-Help them, using the following context:
+qa_template = """
+You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
+If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+
 <context>
 {context}
 </context>
 """
 
-faq_prompt = ChatPromptTemplate.from_messages([
-    ("system", faq_template),
+qa_prompt = ChatPromptTemplate.from_messages([
+    ("system", qa_template),
     MessagesPlaceholder("messages"),
 ])
 
@@ -91,7 +92,7 @@ faq_prompt = ChatPromptTemplate.from_messages([
 # 5) Document chain + retrieval orchestration
 # ------------------------------------------------
 # Takes retrieved docs and "stuffs" them into the prompt for the LLM
-document_chain = create_stuff_documents_chain(LLaMa(), faq_prompt)
+document_chain = create_stuff_documents_chain(LLaMa(), qa_prompt)
 
 def parse_retriever_input(params):
     # Extract the latest human message to drive the retriever
@@ -111,7 +112,7 @@ retrieval_chain = (
 # 6) Simple test invocation
 # ----------------------------
 if __name__ == "__main__":
-    user_query = "I received a damaged item. I want my money back."
+    user_query = "What is the total payment amount?"
     response = retrieval_chain.invoke({
         "messages": [HumanMessage(user_query)]
     })

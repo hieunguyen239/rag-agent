@@ -5,3 +5,4 @@ faiss-cpu
 langchain-huggingface
 sentence-transformers
 langchain-classic
+pypdf
