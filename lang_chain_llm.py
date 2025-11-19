@@ -1,5 +1,6 @@
 # rag_ollama_langchain.py
 
+import os
 from requests import post as rpost
 
 # LangChain core and components
@@ -24,11 +25,11 @@ def call_llama(prompt: str) -> str:
     """
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model": "llama3.1",
+        "model": "llama3",
         "prompt": prompt,
         "stream": False,
     }
-    response = rpost("http://172.20.96.1:11434/api/generate", headers=headers, json=payload)
+    response = rpost("http://192.168.2.5:11434/api/generate", headers=headers, json=payload)
     response.raise_for_status()
     data = response.json()
     return data["response"]
@@ -54,20 +55,36 @@ class LLaMa(LLM):
 # ---------------------------------
 # 3) Build retriever from PDF
 # ---------------------------------
-# Load the PDF
-loader = PyPDFLoader("HOADON_655233460.pdf")
-documents = loader.load()
-
-# Split the document into chunks
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-texts = text_splitter.split_documents(documents)
-
+FAISS_INDEX_PATH = "faiss_index"
 
 # HuggingFace sentence-transformers embeddings; good default for quick RAG demos
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# Build FAISS index and get a retriever
-retriever = FAISS.from_documents(texts, embeddings).as_retriever(k=5)
+if os.path.exists(FAISS_INDEX_PATH):
+    # Load the FAISS index from disk
+    print("Loading FAISS index from disk.")
+    vectorstore = FAISS.load_local(
+        FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
+    )
+else:
+    # Create the FAISS index from the PDF
+    print("Creating FAISS index from PDF.")
+    # Load the PDF
+    loader = PyPDFLoader("TRIUMPH_2023_TIGER_SPORT_-TRIDENT_660_ENG.pdf")
+    documents = loader.load()
+
+    # Split the document into chunks
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    texts = text_splitter.split_documents(documents)
+
+    # Build FAISS index
+    vectorstore = FAISS.from_documents(texts, embeddings)
+
+    # Save the FAISS index to disk
+    vectorstore.save_local(FAISS_INDEX_PATH)
+
+# Get a retriever
+retriever = vectorstore.as_retriever(k=5)
 
 
 # ----------------------------
@@ -112,7 +129,7 @@ retrieval_chain = (
 # 6) Simple test invocation
 # ----------------------------
 if __name__ == "__main__":
-    user_query = "What is the total payment amount?"
+    user_query = "fuel tank capacity of the Triumph Tiger Sport?"
     response = retrieval_chain.invoke({
         "messages": [HumanMessage(user_query)]
     })
