@@ -3,12 +3,13 @@
 This project is a Python-based application that demonstrates a Retrieval-Augmented Generation (RAG) pipeline using the LangChain library. It's designed to answer user queries based on a predefined set of documents.
 
 The project uses the following technologies:
-- **Ollama:** For running a local LLaMA model (`llama3.1`).
+- **Hugging Face Transformers:** For running LLMs locally (currently using TinyLlama, can be switched to Llama 3 with access)
 - **LangChain:** For building the RAG pipeline, including prompt templates, document chains, and retrieval mechanisms.
 - **FAISS:** For efficient similarity search in a vector store of document embeddings.
 - **HuggingFace Sentence-Transformers:** For generating text embeddings.
+- **PyTorch:** For running the transformer models locally.
 
-The core logic is contained in `lang_chain_llm.py`, which sets up the entire RAG pipeline from document loading to answer generation. The `call_llama.py` script provides a standalone function for interacting with the Ollama API.
+The core logic is contained in `lang_chain_llm.py`, which sets up the entire RAG pipeline from document loading to answer generation.
 
 # Building and Running
 
@@ -20,18 +21,15 @@ First, install the required Python packages using pip:
 pip install -r requirements.txt
 ```
 
-## 2. Set up Ollama on Windows
+## 2. Set up Hugging Face API Token
 
-This project is configured to connect to an Ollama instance running on the Windows host machine, from within the WSL environment.
+Create a `.env` file in the project root with your Hugging Face API token:
 
-First, ensure Ollama is running on your Windows machine. You can start it by finding "Ollama" in the Start Menu or by running `ollama serve` in a Windows Command Prompt or PowerShell.
-
-If you don't have the `llama3.1` model, you can pull it using the following command on Windows:
 ```bash
-ollama pull llama3.1
+HUGGINGFACEHUB_API_TOKEN=your_token_here
 ```
 
-The Python scripts in this project are hardcoded to connect to Ollama at `http://172.20.96.1:11434`. This IP address is assumed to be the address of your Windows host, as seen from WSL. If your configuration is different, you may need to update the IP address in `lang_chain_llm.py` and `call_llama.py`.
+You can get a token from https://huggingface.co/settings/tokens
 
 ## 3. Run the Application
 
@@ -42,6 +40,10 @@ python3 lang_chain_llm.py
 ```
 
 This will run a predefined query through the RAG pipeline and print the model's answer to the console.
+
+**Note:** The first run will download the model (TinyLlama, ~2GB) which may take several minutes. Subsequent runs will use the cached model.
+
+For instructions on using Llama 3 models instead, see `HUGGINGFACE_SETUP.md`.
 
 # Development Conventions
 

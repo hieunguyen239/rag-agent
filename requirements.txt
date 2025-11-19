@@ -6,3 +6,8 @@ langchain-huggingface
 sentence-transformers
 langchain-classic
 pypdf
+python-dotenv
+huggingface_hub
+transformers
+torch
+accelerate

@@ -1,55 +1,47 @@
-# rag_ollama_langchain.py
+# rag_huggingface_langchain.py
 
 import os
-from requests import post as rpost
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # LangChain core and components
-from langchain_core.language_models.llms import LLM
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.messages import HumanMessage
+from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline
+from langchain_core.prompts import PromptTemplate
+from langchain_classic.chains import RetrievalQA
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-
-# -----------------------------
-# 1) API function to call Ollama
-# -----------------------------
-def call_llama(prompt: str) -> str:
-    """
-    Calls a local Ollama model with a prompt and returns the generated response text.
-    Ensure Ollama is running: `ollama serve` and that model `llama3.1` is available.
-    """
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "model": "llama3",
-        "prompt": prompt,
-        "stream": False,
-    }
-    response = rpost("http://192.168.2.5:11434/api/generate", headers=headers, json=payload)
-    response.raise_for_status()
-    data = response.json()
-    return data["response"]
-
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 # --------------------------------------
-# 2) Custom LangChain LLM wrapper class
+# 2) Initialize Hugging Face LLM
 # --------------------------------------
-class LLaMa(LLM):
-    """
-    Minimal LangChain-compatible LLM that uses the local Ollama endpoint via call_llama.
-    """
+# Using TinyLlama - a small, ungated instruction-tuned model
+# This downloads the model locally but gives you full control
+# For Llama 3, you need to request access at: https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct
+print("Loading model... This may take a while on first run.")
+model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    device_map="auto",
+    torch_dtype="auto"
+)
 
-    def _call(self, prompt: str, **kwargs) -> str:
-        return call_llama(prompt)
+pipe = pipeline(
+    "text-generation",
+    model=model,
+    tokenizer=tokenizer,
+    max_new_tokens=256,
+    temperature=0.1,
+    do_sample=True,
+    top_p=0.95,
+)
 
-    @property
-    def _llm_type(self) -> str:
-        # Arbitrary identifier for this LLM type
-        return "llama-3.1-8b"
+llm = HuggingFacePipeline(pipeline=pipe)
 
 
 # ---------------------------------
@@ -90,38 +82,32 @@ retriever = vectorstore.as_retriever(k=5)
 # ----------------------------
 # 4) Prompt template for the LLM
 # ----------------------------
-qa_template = """
-You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
-If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+prompt_template = """You are a helpful assistant. Use ONLY the information from the context below to answer the question.
 
-<context>
+IMPORTANT: The context contains tables with two columns - "Trident" and "Tiger Sport". When asked about "Tiger Sport", use values from the "Tiger Sport" column (the RIGHT column), NOT the "Trident" column.
+
+Context:
 {context}
-</context>
-"""
 
-qa_prompt = ChatPromptTemplate.from_messages([
-    ("system", qa_template),
-    MessagesPlaceholder("messages"),
-])
+Question: {question}
+
+Answer:"""
+
+qa_prompt = PromptTemplate(
+    template=prompt_template, 
+    input_variables=["context", "question"]
+)
 
 
 # ------------------------------------------------
-# 5) Document chain + retrieval orchestration
+# 5) Create the RetrievalQA chain
 # ------------------------------------------------
-# Takes retrieved docs and "stuffs" them into the prompt for the LLM
-document_chain = create_stuff_documents_chain(LLaMa(), qa_prompt)
-
-def parse_retriever_input(params):
-    # Extract the latest human message to drive the retriever
-    return params["messages"][-1].content
-
-# Build a Runnable pipeline:
-# - Resolve 'context' by passing the latest message into the retriever
-# - Generate 'answer' by calling the document chain with the context
-retrieval_chain = (
-    RunnablePassthrough
-    .assign(context=parse_retriever_input | retriever)
-    .assign(answer=document_chain)
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    chain_type="stuff",
+    retriever=retriever,
+    return_source_documents=True,
+    chain_type_kwargs={"prompt": qa_prompt}
 )
 
 
@@ -130,8 +116,11 @@ retrieval_chain = (
 # ----------------------------
 if __name__ == "__main__":
     user_query = "fuel tank capacity of the Triumph Tiger Sport?"
-    response = retrieval_chain.invoke({
-        "messages": [HumanMessage(user_query)]
-    })
-    # The response contains both 'context' and 'answer' keys; print the model's answer
-    print(response["answer"])
+    response = qa_chain.invoke({"query": user_query})
+    
+    print("\n" + "="*50)
+    print("QUESTION:", user_query)
+    print("="*50)
+    print("\nANSWER:")
+    print(response["result"])
+    print("="*50)
