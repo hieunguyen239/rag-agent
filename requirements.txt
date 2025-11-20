@@ -1,8 +1,13 @@
+# Core LangChain dependencies
 langchain
 langchain-core
 langchain-community
+langchain-classic
+
+# Vector store and embeddings
 faiss-cpu
 langchain-huggingface
 sentence-transformers
-langchain-classic
+
+# Document processing
 pypdf
