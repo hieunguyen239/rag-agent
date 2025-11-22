@@ -81,7 +81,7 @@ For the goal of building a question-answering system over a specific set of docu
 
 1.  **Dynamic Knowledge:** Our source documents might be updated. With RAG, we can simply re-index the documents, which is fast and cheap. With fine-tuning, we would have to perform a costly retrain for every minor change.
 2.  **Verifiability:** RAG allows us to trace an answer back to a specific part of the source PDF. This is critical for building trust and allowing users to verify the information.
-3.  **Cost and Simplicity:** The `lang_chain_llm.py` script demonstrates a complete RAG pipeline that can run on local hardware. A full fine-tuning process would be significantly more complex and resource-intensive.
+3.  **Cost and Simplicity:** The `chatbot.py` script demonstrates a complete RAG pipeline that can run on local hardware. A full fine-tuning process would be significantly more complex and resource-intensive.
 
 In short, we use RAG because we are teaching the LLM **what to know**, not **how to think**. For factual recall from a dynamic knowledge base, RAG is the industry-standard approach.
 

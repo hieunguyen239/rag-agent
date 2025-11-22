@@ -11,3 +11,4 @@ sentence-transformers
 
 # Document processing
 pypdf
+python-dotenv
