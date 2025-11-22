@@ -1,7 +1,12 @@
 # rag_ollama_langchain.py
 
 import os
+import glob
 from requests import post as rpost
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # LangChain core and components
 from langchain_core.language_models.llms import LLM
@@ -21,15 +26,19 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 def call_llama(prompt: str) -> str:
     """
     Calls a local Ollama model with a prompt and returns the generated response text.
-    Ensure Ollama is running: `ollama serve` and that model `llama3.1` is available.
+    Ensure Ollama is running: `ollama serve` and that the configured model is available.
     """
+    # Get configuration from environment variables
+    model = os.getenv("OLLAMA_MODEL", "llama3.1")
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model": "llama3",
+        "model": model,
         "prompt": prompt,
         "stream": False,
     }
-    response = rpost("http://192.168.2.5:11434/api/generate", headers=headers, json=payload)
+    response = rpost(f"{base_url}/api/generate", headers=headers, json=payload)
     response.raise_for_status()
     data = response.json()
     return data["response"]
@@ -67,21 +76,39 @@ if os.path.exists(FAISS_INDEX_PATH):
         FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
     )
 else:
-    # Create the FAISS index from the PDF
-    print("Creating FAISS index from PDF.")
-    # Load the PDF
-    loader = PyPDFLoader("TRIUMPH_2023_TIGER_SPORT_-TRIDENT_660_ENG.pdf")
-    documents = loader.load()
+    # Create the FAISS index from all PDFs in the directory
+    print("Creating FAISS index from all PDFs in the directory.")
+    
+    # Find all PDF files in the current directory
+    pdf_files = glob.glob("*.pdf")
+    
+    if not pdf_files:
+        raise FileNotFoundError("No PDF files found in the current directory.")
+    
+    print(f"Found {len(pdf_files)} PDF file(s): {', '.join(pdf_files)}")
+    
+    # Load all PDFs
+    all_documents = []
+    for pdf_file in pdf_files:
+        print(f"Loading {pdf_file}...")
+        loader = PyPDFLoader(pdf_file)
+        all_documents.extend(loader.load())
+    
+    print(f"Loaded {len(all_documents)} pages total from all PDFs.")
 
-    # Split the document into chunks
+    # Split the documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    texts = text_splitter.split_documents(documents)
+    texts = text_splitter.split_documents(all_documents)
+    
+    print(f"Split into {len(texts)} text chunks.")
 
     # Build FAISS index
     vectorstore = FAISS.from_documents(texts, embeddings)
 
     # Save the FAISS index to disk
+    print(f"Saving FAISS index to {FAISS_INDEX_PATH}...")
     vectorstore.save_local(FAISS_INDEX_PATH)
+    print("FAISS index created and saved successfully!")
 
 # Get a retriever
 retriever = vectorstore.as_retriever(k=5)
