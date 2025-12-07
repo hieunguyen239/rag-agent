@@ -2,7 +2,7 @@
 
 import os
 import glob
-from requests import post as rpost
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -18,47 +18,13 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 # -----------------------------
-# 1) API function to call Ollama
+# 1) Initialize Google Gemini
 # -----------------------------
-def call_llama(prompt: str) -> str:
-    """
-    Calls a local Ollama model with a prompt and returns the generated response text.
-    Ensure Ollama is running: `ollama serve` and that the configured model is available.
-    """
-    # Get configuration from environment variables
-    model = os.getenv("OLLAMA_MODEL", "llama3.1")
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-    }
-    response = rpost(f"{base_url}/api/generate", headers=headers, json=payload)
-    response.raise_for_status()
-    data = response.json()
-    return data["response"]
-
-
-# --------------------------------------
-# 2) Custom LangChain LLM wrapper class
-# --------------------------------------
-class LLaMa(LLM):
-    """
-    Minimal LangChain-compatible LLM that uses the local Ollama endpoint via call_llama.
-    """
-
-    def _call(self, prompt: str, **kwargs) -> str:
-        return call_llama(prompt)
-
-    @property
-    def _llm_type(self) -> str:
-        # Arbitrary identifier for this LLM type
-        return "llama-3.1-8b"
+# Reads GOOGLE_API_KEY from environment automaticallly
+llm = ChatGoogleGenerativeAI(model="gemini-flash-latest")
 
 
 # ---------------------------------
@@ -66,8 +32,8 @@ class LLaMa(LLM):
 # ---------------------------------
 FAISS_INDEX_PATH = "faiss_index"
 
-# HuggingFace sentence-transformers embeddings; good default for quick RAG demos
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# Google Generative AI Embeddings
+embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 if os.path.exists(FAISS_INDEX_PATH):
     # Load the FAISS index from disk
@@ -136,7 +102,7 @@ qa_prompt = ChatPromptTemplate.from_messages([
 # 5) Document chain + retrieval orchestration
 # ------------------------------------------------
 # Takes retrieved docs and "stuffs" them into the prompt for the LLM
-document_chain = create_stuff_documents_chain(LLaMa(), qa_prompt)
+document_chain = create_stuff_documents_chain(llm, qa_prompt)
 
 def parse_retriever_input(params):
     # Extract the latest human message to drive the retriever
