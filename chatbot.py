@@ -10,8 +10,6 @@ load_dotenv()
 
 # LangChain core and components
 from langchain_core.language_models.llms import LLM
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.runnables import RunnablePassthrough
@@ -27,24 +25,41 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 llm = ChatGoogleGenerativeAI(model="gemini-flash-latest")
 
 
+from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone
+
 # ---------------------------------
 # 3) Build retriever from PDF
 # ---------------------------------
-FAISS_INDEX_PATH = "faiss_index"
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 
 # Google Generative AI Embeddings
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
-if os.path.exists(FAISS_INDEX_PATH):
-    # Load the FAISS index from disk
-    print("Loading FAISS index from disk.")
-    vectorstore = FAISS.load_local(
-        FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
-    )
-else:
-    # Create the FAISS index from all PDFs in the directory
-    print("Creating FAISS index from all PDFs in the directory.")
-    
+def get_vectorstore():
+    # Attempt to use Pinecone if credentials are provided
+    if PINECONE_API_KEY and PINECONE_INDEX_NAME:
+        print(f"Checking Pinecone index: {PINECONE_INDEX_NAME}...")
+        try:
+            pc = Pinecone(api_key=PINECONE_API_KEY)
+            index = pc.Index(PINECONE_INDEX_NAME)
+            stats = index.describe_index_stats()
+            
+            if stats['total_vector_count'] > 0:
+                print(f"Using Pinecone Cloud Vector Store (Found {stats['total_vector_count']} vectors).")
+                return PineconeVectorStore(index_name=PINECONE_INDEX_NAME, embedding=embeddings)
+            else:
+                print("Pinecone index is empty. Triggering initial upload...")
+                return None
+        except Exception as e:
+            raise RuntimeError(f"Error connecting to Pinecone: {e}")
+
+    raise ValueError("PINECONE_API_KEY and PINECONE_INDEX_NAME must be set in the environment.")
+
+vectorstore = get_vectorstore()
+
+if vectorstore is None:
     # Find all PDF files in the current directory
     pdf_files = glob.glob("*.pdf")
     
@@ -68,13 +83,17 @@ else:
     
     print(f"Split into {len(texts)} text chunks.")
 
-    # Build FAISS index
-    vectorstore = FAISS.from_documents(texts, embeddings)
-
-    # Save the FAISS index to disk
-    print(f"Saving FAISS index to {FAISS_INDEX_PATH}...")
-    vectorstore.save_local(FAISS_INDEX_PATH)
-    print("FAISS index created and saved successfully!")
+    # Build vectorstore and save
+    if PINECONE_API_KEY and PINECONE_INDEX_NAME:
+        print(f"Upserting to Pinecone index: {PINECONE_INDEX_NAME}...")
+        vectorstore = PineconeVectorStore.from_documents(
+            texts, 
+            embeddings, 
+            index_name=PINECONE_INDEX_NAME
+        )
+        print("Documents successfully upserted to Pinecone!")
+    else:
+        raise ValueError("Cannot upload to Pinecone: PINECONE_API_KEY or PINECONE_INDEX_NAME is missing.")
 
 # Get a retriever
 retriever = vectorstore.as_retriever(k=5)
